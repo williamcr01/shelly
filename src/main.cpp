@@ -8,7 +8,7 @@ auto main() -> int {
     Executor executor;
 
     while (true) {
-        std::cout << "shelly>";
+        std::cout << "shelly> ";
 
         std::string line;
         if (!std::getline(std::cin, line)) {
