@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <sys/wait.h>
+#include <unistd.h>
 
 Executor::Executor()
     : builtins{
@@ -13,11 +15,11 @@ int Executor::execute(const Command &cmd) {
         return 0;
     }
 
-    if (run_command(cmd)) {
+    if (run_builtin(cmd)) {
         return 0;
     }
 
-    return 1;
+    return run_external(cmd);
 }
 
 bool Executor::run_builtin(const Command &cmd) {
@@ -29,8 +31,33 @@ bool Executor::run_builtin(const Command &cmd) {
     return false;
 }
 
-bool Executor::run_command(const Command &cmd) {
-    return run_builtin(cmd);
+bool Executor::run_external(const Command &cmd) {
+    std::vector<char *> argv;
+
+    for (const std::string &arg : cmd.args) {
+        argv.push_back(const_cast<char *>(arg.c_str()));
+    }
+
+    argv.push_back(nullptr);
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork");
+        return false;
+    } else if (pid == 0) {
+        execvp(argv[0], argv.data());
+        perror("execvp");
+        std::exit(EXIT_FAILURE);
+    } else {
+        int status;
+        if (waitpid(pid, &status, 0) < 0) {
+            perror("waitpid");
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 int Executor::builtin_exit(const Command &cmd) {

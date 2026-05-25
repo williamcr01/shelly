@@ -18,7 +18,7 @@ class Executor {
 
     bool run_builtin(const Command &cmd);
 
-    bool run_command(const Command &cmd);
+    bool run_external(const Command &cmd);
 
     int builtin_exit(const Command &cmd);
 };
