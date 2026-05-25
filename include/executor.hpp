@@ -16,9 +16,11 @@ class Executor {
 
     std::vector<Builtin> builtins;
 
-    bool run_builtin(const Command &cmd);
+    const int not_builtin = -1;
 
-    bool run_external(const Command &cmd);
+    int run_builtin(const Command &cmd);
+
+    int run_external(const Command &cmd);
 
     int builtin_exit(const Command &cmd);
 

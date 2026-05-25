@@ -17,24 +17,25 @@ int Executor::execute(const Command &cmd) {
         return 0;
     }
 
-    if (run_builtin(cmd)) {
-        return 0;
+    int builtin_status = run_builtin(cmd);
+
+    if (builtin_status != not_builtin) {
+        return builtin_status;
     }
 
     return run_external(cmd);
 }
 
-bool Executor::run_builtin(const Command &cmd) {
+int Executor::run_builtin(const Command &cmd) {
     for (const auto &builtin : builtins) {
         if (cmd.args[0] == builtin.name) {
-            (this->*builtin.function)(cmd);
-            return true;
+            return (this->*builtin.function)(cmd);
         }
     }
-    return false;
+    return not_builtin;
 }
 
-bool Executor::run_external(const Command &cmd) {
+int Executor::run_external(const Command &cmd) {
     std::vector<char *> argv;
 
     for (const std::string &arg : cmd.args) {
@@ -47,20 +48,28 @@ bool Executor::run_external(const Command &cmd) {
 
     if (pid < 0) {
         perror("fork");
-        return false;
+        return 1;
     } else if (pid == 0) {
         execvp(argv[0], argv.data());
         perror("execvp");
         std::exit(EXIT_FAILURE);
-    } else {
-        int status;
-        if (waitpid(pid, &status, 0) < 0) {
-            perror("waitpid");
-            return false;
-        }
     }
 
-    return true;
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        perror("waitpid");
+        return 1;
+    }
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+
+    return 1;
 }
 
 int Executor::builtin_exit(const Command &cmd) {
