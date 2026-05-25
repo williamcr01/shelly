@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-auto main(int argc, char *argv[]) -> int {
+auto main() -> int {
     Executor executor;
 
     while (true) {

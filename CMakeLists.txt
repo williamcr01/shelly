@@ -11,7 +11,9 @@ add_executable(shelly
     src/executor.cpp
 )
 
-target_include_directories(shelly PRIVATE include)
+target_include_directories(shelly PRIVATE
+    include
+)
 
 target_compile_options(shelly PRIVATE
     -Wall
