@@ -1,9 +1,77 @@
 #include "executor.hpp"
 
 #include <cstdlib>
+#include <fcntl.h>
 #include <iostream>
 #include <string>
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <unistd.h>
+
+namespace {
+struct SavedFd {
+    int target_fd;
+    int saved_fd;
+};
+
+int redirect_target_fd(RedirectType type) {
+    return type == RedirectType::Input ? STDIN_FILENO : STDOUT_FILENO;
+}
+
+int open_redirect_file(const Redirect &redirect) {
+    switch (redirect.type) {
+    case RedirectType::Input:
+        return open(redirect.filename.c_str(), O_RDONLY);
+    case RedirectType::Output:
+        return open(redirect.filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    case RedirectType::Append:
+        return open(redirect.filename.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+    }
+
+    return -1;
+}
+
+bool apply_redirects(const std::vector<Redirect> &redirects, std::vector<SavedFd> *saved_fds = nullptr) {
+    for (const Redirect &redirect : redirects) {
+        int target_fd = redirect_target_fd(redirect.type);
+
+        if (saved_fds != nullptr) {
+            int saved_fd = dup(target_fd);
+            if (saved_fd < 0) {
+                perror("dup");
+                return false;
+            }
+            saved_fds->push_back({target_fd, saved_fd});
+        }
+
+        int file_fd = open_redirect_file(redirect);
+        if (file_fd < 0) {
+            perror(redirect.filename.c_str());
+            return false;
+        }
+
+        if (dup2(file_fd, target_fd) < 0) {
+            perror("dup2");
+            close(file_fd);
+            return false;
+        }
+
+        close(file_fd);
+    }
+
+    return true;
+}
+
+void restore_redirects(std::vector<SavedFd> &saved_fds) {
+    for (auto it = saved_fds.rbegin(); it != saved_fds.rend(); ++it) {
+        if (dup2(it->saved_fd, it->target_fd) < 0) {
+            perror("dup2");
+        }
+        close(it->saved_fd);
+    }
+    saved_fds.clear();
+}
+} // namespace
 
 Executor::Executor()
     : builtins{
@@ -14,6 +82,16 @@ Executor::Executor()
 
 int Executor::execute(const Command &cmd) {
     if (cmd.is_empty()) {
+        if (cmd.redirects.empty()) {
+            return 0;
+        }
+
+        std::vector<SavedFd> saved_fds;
+        if (!apply_redirects(cmd.redirects, &saved_fds)) {
+            restore_redirects(saved_fds);
+            return 1;
+        }
+        restore_redirects(saved_fds);
         return 0;
     }
 
@@ -29,7 +107,15 @@ int Executor::execute(const Command &cmd) {
 int Executor::run_builtin(const Command &cmd) {
     for (const auto &builtin : builtins) {
         if (cmd.args[0] == builtin.name) {
-            return (this->*builtin.function)(cmd);
+            std::vector<SavedFd> saved_fds;
+            if (!apply_redirects(cmd.redirects, &saved_fds)) {
+                restore_redirects(saved_fds);
+                return 1;
+            }
+
+            int status = (this->*builtin.function)(cmd);
+            restore_redirects(saved_fds);
+            return status;
         }
     }
     return not_builtin;
@@ -50,6 +136,10 @@ int Executor::run_external(const Command &cmd) {
         perror("fork");
         return 1;
     } else if (pid == 0) {
+        if (!apply_redirects(cmd.redirects)) {
+            std::exit(EXIT_FAILURE);
+        }
+
         execvp(argv[0], argv.data());
         perror("execvp");
         std::exit(EXIT_FAILURE);
