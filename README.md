@@ -23,4 +23,5 @@ cmake --build build
 - Append redirection with `>>`
 - Redirection support for both external commands and built-ins
 - Pipelines with `|` between commands
+- `Ctrl-C` interrupts foreground commands without exiting the shell
 - Single- and double-quoted arguments

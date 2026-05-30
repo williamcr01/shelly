@@ -1,5 +1,6 @@
 #include "executor.hpp"
 
+#include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
 #include <iostream>
@@ -158,6 +159,8 @@ int Executor::run_external(const SimpleCommand &cmd) {
         perror("fork");
         return 1;
     } else if (pid == 0) {
+        std::signal(SIGINT, SIG_DFL);
+
         if (!apply_redirects(cmd.redirects)) {
             std::exit(EXIT_FAILURE);
         }
@@ -216,6 +219,8 @@ int Executor::run_pipeline(const Command &cmd) {
         }
 
         if (pid == 0) {
+            std::signal(SIGINT, SIG_DFL);
+
             if (previous_read_fd >= 0) {
                 if (dup2(previous_read_fd, STDIN_FILENO) < 0) {
                     perror("dup2");

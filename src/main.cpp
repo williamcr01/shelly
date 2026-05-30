@@ -1,11 +1,14 @@
 #include "command.hpp"
 #include "executor.hpp"
 
+#include <csignal>
 #include <exception>
 #include <iostream>
 #include <string>
 
 auto main() -> int {
+    std::signal(SIGINT, SIG_IGN);
+
     Executor executor;
 
     while (true) {
