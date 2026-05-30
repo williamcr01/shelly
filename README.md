@@ -18,6 +18,11 @@ cmake --build build
   - `cd` with `~` and `~/...` expansion
   - `pwd`
   - `exit [code]`
+  - `echo`
+  - `export`
+  - `unset`
+  - `env`
+  - `history`
 - Input redirection with `<`
 - Output redirection with `>`
 - Append redirection with `>>`

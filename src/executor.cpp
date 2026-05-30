@@ -79,7 +79,18 @@ Executor::Executor()
           {"exit", &Executor::builtin_exit},
           {"pwd", &Executor::builtin_pwd},
           {"cd", &Executor::builtin_cd},
+          {"echo", &Executor::builtin_echo},
+          {"export", &Executor::builtin_export},
+          {"unset", &Executor::builtin_unset},
+          {"env", &Executor::builtin_env},
+          {"history", &Executor::builtin_history},
       } {}
+
+void Executor::add_history(const std::string &line) {
+    if (!line.empty()) {
+        history.push_back(line);
+    }
+}
 
 int Executor::execute(const Command &cmd) {
     if (cmd.is_empty()) {
@@ -366,5 +377,81 @@ int Executor::builtin_cd(const SimpleCommand &cmd) {
         return 1;
     }
 
+    return 0;
+}
+
+int Executor::builtin_echo(const SimpleCommand &cmd) {
+    for (std::size_t i = 1; i < cmd.args.size(); ++i) {
+        if (i > 1) {
+            std::cout << ' ';
+        }
+        std::cout << cmd.args[i];
+    }
+    std::cout << std::endl;
+    return 0;
+}
+
+int Executor::builtin_export(const SimpleCommand &cmd) {
+    if (cmd.args.size() == 1) {
+        return builtin_env(cmd);
+    }
+
+    for (std::size_t i = 1; i < cmd.args.size(); ++i) {
+        std::string name;
+        std::string value;
+        std::size_t equals = cmd.args[i].find('=');
+
+        if (equals != std::string::npos) {
+            name = cmd.args[i].substr(0, equals);
+            value = cmd.args[i].substr(equals + 1);
+        } else if (i + 1 < cmd.args.size()) {
+            name = cmd.args[i];
+            value = cmd.args[++i];
+        } else {
+            name = cmd.args[i];
+            value.clear();
+        }
+
+        if (name.empty() || name.find('=') != std::string::npos) {
+            std::cerr << "export: invalid name: " << name << std::endl;
+            return 1;
+        }
+
+        if (setenv(name.c_str(), value.c_str(), 1) < 0) {
+            perror("export");
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+int Executor::builtin_unset(const SimpleCommand &cmd) {
+    for (std::size_t i = 1; i < cmd.args.size(); ++i) {
+        if (unsetenv(cmd.args[i].c_str()) < 0) {
+            perror("unset");
+            return 1;
+        }
+    }
+    return 0;
+}
+
+extern char **environ;
+
+int Executor::builtin_env(const SimpleCommand &cmd) {
+    (void)cmd;
+
+    for (char **entry = environ; *entry != nullptr; ++entry) {
+        std::cout << *entry << std::endl;
+    }
+    return 0;
+}
+
+int Executor::builtin_history(const SimpleCommand &cmd) {
+    (void)cmd;
+
+    for (std::size_t i = 0; i < history.size(); ++i) {
+        std::cout << i + 1 << "  " << history[i] << std::endl;
+    }
     return 0;
 }

@@ -7,6 +7,7 @@ class Executor {
     Executor();
 
     int execute(const Command &cmd);
+    void add_history(const std::string &line);
 
   private:
     struct Builtin {
@@ -15,6 +16,7 @@ class Executor {
     };
 
     std::vector<Builtin> builtins;
+    std::vector<std::string> history;
 
     const int not_builtin = -1;
 
@@ -29,4 +31,9 @@ class Executor {
     int builtin_pwd(const SimpleCommand &cmd);
 
     int builtin_cd(const SimpleCommand &cmd);
+    int builtin_echo(const SimpleCommand &cmd);
+    int builtin_export(const SimpleCommand &cmd);
+    int builtin_unset(const SimpleCommand &cmd);
+    int builtin_env(const SimpleCommand &cmd);
+    int builtin_history(const SimpleCommand &cmd);
 };

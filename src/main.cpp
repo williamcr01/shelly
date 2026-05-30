@@ -20,6 +20,7 @@ auto main() -> int {
         }
 
         try {
+            executor.add_history(line);
             Command cmd(line);
             executor.execute(cmd);
         } catch (const std::exception &error) {
