@@ -82,12 +82,18 @@ Executor::Executor()
 
 int Executor::execute(const Command &cmd) {
     if (cmd.is_empty()) {
-        if (cmd.redirects.empty()) {
-            return 0;
-        }
+        return 0;
+    }
 
+    if (cmd.is_pipeline()) {
+        return run_pipeline(cmd);
+    }
+
+    const SimpleCommand &stage = cmd.stages[0];
+
+    if (stage.args.empty()) {
         std::vector<SavedFd> saved_fds;
-        if (!apply_redirects(cmd.redirects, &saved_fds)) {
+        if (!apply_redirects(stage.redirects, &saved_fds)) {
             restore_redirects(saved_fds);
             return 1;
         }
@@ -95,33 +101,49 @@ int Executor::execute(const Command &cmd) {
         return 0;
     }
 
-    int builtin_status = run_builtin(cmd);
+    int builtin_status = run_builtin(stage);
 
     if (builtin_status != not_builtin) {
         return builtin_status;
     }
 
-    return run_external(cmd);
+    return run_external(stage);
 }
 
-int Executor::run_builtin(const Command &cmd) {
+int Executor::execute_builtin(const SimpleCommand &cmd) {
     for (const auto &builtin : builtins) {
-        if (cmd.args[0] == builtin.name) {
-            std::vector<SavedFd> saved_fds;
-            if (!apply_redirects(cmd.redirects, &saved_fds)) {
-                restore_redirects(saved_fds);
-                return 1;
-            }
-
-            int status = (this->*builtin.function)(cmd);
-            restore_redirects(saved_fds);
-            return status;
+        if (!cmd.args.empty() && cmd.args[0] == builtin.name) {
+            return (this->*builtin.function)(cmd);
         }
     }
     return not_builtin;
 }
 
-int Executor::run_external(const Command &cmd) {
+int Executor::run_builtin(const SimpleCommand &cmd) {
+    bool is_builtin = false;
+    for (const auto &builtin : builtins) {
+        if (!cmd.args.empty() && cmd.args[0] == builtin.name) {
+            is_builtin = true;
+            break;
+        }
+    }
+
+    if (!is_builtin) {
+        return not_builtin;
+    }
+
+    std::vector<SavedFd> saved_fds;
+    if (!apply_redirects(cmd.redirects, &saved_fds)) {
+        restore_redirects(saved_fds);
+        return 1;
+    }
+
+    int status = execute_builtin(cmd);
+    restore_redirects(saved_fds);
+    return status;
+}
+
+int Executor::run_external(const SimpleCommand &cmd) {
     std::vector<char *> argv;
 
     for (const std::string &arg : cmd.args) {
@@ -162,7 +184,117 @@ int Executor::run_external(const Command &cmd) {
     return 1;
 }
 
-int Executor::builtin_exit(const Command &cmd) {
+int Executor::run_pipeline(const Command &cmd) {
+    std::vector<pid_t> pids;
+    int previous_read_fd = -1;
+
+    for (std::size_t i = 0; i < cmd.stages.size(); ++i) {
+        int pipe_fds[2] = {-1, -1};
+        bool has_next = i + 1 < cmd.stages.size();
+
+        if (has_next && pipe(pipe_fds) < 0) {
+            perror("pipe");
+            if (previous_read_fd >= 0) {
+                close(previous_read_fd);
+            }
+            return 1;
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork");
+            if (previous_read_fd >= 0) {
+                close(previous_read_fd);
+            }
+            if (pipe_fds[0] >= 0) {
+                close(pipe_fds[0]);
+            }
+            if (pipe_fds[1] >= 0) {
+                close(pipe_fds[1]);
+            }
+            return 1;
+        }
+
+        if (pid == 0) {
+            if (previous_read_fd >= 0) {
+                if (dup2(previous_read_fd, STDIN_FILENO) < 0) {
+                    perror("dup2");
+                    std::exit(EXIT_FAILURE);
+                }
+                close(previous_read_fd);
+            }
+
+            if (has_next) {
+                close(pipe_fds[0]);
+                if (dup2(pipe_fds[1], STDOUT_FILENO) < 0) {
+                    perror("dup2");
+                    std::exit(EXIT_FAILURE);
+                }
+                close(pipe_fds[1]);
+            }
+
+            const SimpleCommand &stage = cmd.stages[i];
+            if (!apply_redirects(stage.redirects)) {
+                std::exit(EXIT_FAILURE);
+            }
+
+            if (stage.args.empty()) {
+                std::exit(EXIT_SUCCESS);
+            }
+
+            int builtin_status = execute_builtin(stage);
+            if (builtin_status != not_builtin) {
+                std::exit(builtin_status);
+            }
+
+            std::vector<char *> argv;
+            for (const std::string &arg : stage.args) {
+                argv.push_back(const_cast<char *>(arg.c_str()));
+            }
+            argv.push_back(nullptr);
+
+            execvp(argv[0], argv.data());
+            perror("execvp");
+            std::exit(EXIT_FAILURE);
+        }
+
+        pids.push_back(pid);
+
+        if (previous_read_fd >= 0) {
+            close(previous_read_fd);
+        }
+        if (has_next) {
+            close(pipe_fds[1]);
+            previous_read_fd = pipe_fds[0];
+        } else {
+            previous_read_fd = -1;
+        }
+    }
+
+    int last_status = 0;
+    for (pid_t pid : pids) {
+        int status = 0;
+        if (waitpid(pid, &status, 0) < 0) {
+            perror("waitpid");
+            last_status = 1;
+            continue;
+        }
+
+        if (pid == pids.back()) {
+            if (WIFEXITED(status)) {
+                last_status = WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                last_status = 128 + WTERMSIG(status);
+            } else {
+                last_status = 1;
+            }
+        }
+    }
+
+    return last_status;
+}
+
+int Executor::builtin_exit(const SimpleCommand &cmd) {
     int code = 0;
 
     if (cmd.args.size() > 1) {
@@ -177,7 +309,9 @@ int Executor::builtin_exit(const Command &cmd) {
     std::exit(code);
 }
 
-int Executor::builtin_pwd(const Command &cmd) {
+int Executor::builtin_pwd(const SimpleCommand &cmd) {
+    (void)cmd;
+
     char cwd[1024];
     if (getcwd(cwd, sizeof(cwd)) == nullptr) {
         perror("pwd");
@@ -187,7 +321,7 @@ int Executor::builtin_pwd(const Command &cmd) {
     return 0;
 }
 
-int Executor::builtin_cd(const Command &cmd) {
+int Executor::builtin_cd(const SimpleCommand &cmd) {
     if (cmd.args.size() > 2) {
         std::cerr << "cd: too many arguments" << std::endl;
         return 1;

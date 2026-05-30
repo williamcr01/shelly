@@ -11,20 +11,22 @@ class Executor {
   private:
     struct Builtin {
         std::string name;
-        int (Executor::*function)(const Command &);
+        int (Executor::*function)(const SimpleCommand &);
     };
 
     std::vector<Builtin> builtins;
 
     const int not_builtin = -1;
 
-    int run_builtin(const Command &cmd);
+    int run_builtin(const SimpleCommand &cmd);
+    int execute_builtin(const SimpleCommand &cmd);
 
-    int run_external(const Command &cmd);
+    int run_external(const SimpleCommand &cmd);
+    int run_pipeline(const Command &cmd);
 
-    int builtin_exit(const Command &cmd);
+    int builtin_exit(const SimpleCommand &cmd);
 
-    int builtin_pwd(const Command &cmd);
+    int builtin_pwd(const SimpleCommand &cmd);
 
-    int builtin_cd(const Command &cmd);
+    int builtin_cd(const SimpleCommand &cmd);
 };

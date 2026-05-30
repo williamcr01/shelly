@@ -22,4 +22,5 @@ cmake --build build
 - Output redirection with `>`
 - Append redirection with `>>`
 - Redirection support for both external commands and built-ins
+- Pipelines with `|` between commands
 - Single- and double-quoted arguments

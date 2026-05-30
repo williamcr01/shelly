@@ -1,6 +1,7 @@
 #include "command.hpp"
 #include "executor.hpp"
 
+#include <exception>
 #include <iostream>
 #include <string>
 
@@ -15,8 +16,12 @@ auto main() -> int {
             break;
         }
 
-        Command cmd(line);
-        executor.execute(cmd);
+        try {
+            Command cmd(line);
+            executor.execute(cmd);
+        } catch (const std::exception &error) {
+            std::cerr << error.what() << std::endl;
+        }
     }
     return 0;
 }
