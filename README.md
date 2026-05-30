@@ -29,4 +29,5 @@ cmake --build build
 - Redirection support for both external commands and built-ins
 - Pipelines with `|` between commands
 - `Ctrl-C` interrupts foreground commands without exiting the shell
+- Environment variable expansion with `$NAME` and `${NAME}`
 - Single- and double-quoted arguments

@@ -1,6 +1,7 @@
 #include "command.hpp"
 
 #include <cctype>
+#include <cstdlib>
 #include <stdexcept>
 
 Command::Command(const std::string &line) {
@@ -39,6 +40,44 @@ std::vector<std::string> Command::tokenize(const std::string &line) {
             if (!token.empty()) {
                 tokens.push_back(token);
                 token.clear();
+            }
+        } else if (c == '$' && !in_single_quote) {
+            if (i + 1 < line.size() && line[i + 1] == '{') {
+                std::size_t name_begin = i + 2;
+                std::size_t name_end = name_begin;
+
+                while (name_end < line.size() && line[name_end] != '}') {
+                    ++name_end;
+                }
+
+                if (name_end < line.size()) {
+                    std::string name = line.substr(name_begin, name_end - name_begin);
+                    const char *value = std::getenv(name.c_str());
+                    if (value != nullptr) {
+                        token += value;
+                    }
+                    i = name_end;
+                } else {
+                    token += c;
+                }
+            } else if (i + 1 < line.size() &&
+                       (std::isalpha(static_cast<unsigned char>(line[i + 1])) || line[i + 1] == '_')) {
+                std::size_t name_begin = i + 1;
+                std::size_t name_end = name_begin;
+
+                while (name_end < line.size() &&
+                       (std::isalnum(static_cast<unsigned char>(line[name_end])) || line[name_end] == '_')) {
+                    ++name_end;
+                }
+
+                std::string name = line.substr(name_begin, name_end - name_begin);
+                const char *value = std::getenv(name.c_str());
+                if (value != nullptr) {
+                    token += value;
+                }
+                i = name_end - 1;
+            } else {
+                token += c;
             }
         } else if ((c == '<' || c == '>' || c == '|') && !in_single_quote && !in_double_quote) {
             if (!token.empty()) {
